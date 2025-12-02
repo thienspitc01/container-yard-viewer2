@@ -10,9 +10,10 @@ interface BayViewProps {
   highlightedContainerIds: Set<string>;
   selectedVessels: string[];
   filterColors: string[];
+  flowFilter: 'ALL' | 'EXPORT' | 'IMPORT' | 'EMPTY';
 }
 
-const BayView: React.FC<BayViewProps> = ({ bayNumber, containers, rowsPerBay, tiersPerBay, highlightedContainerIds, selectedVessels, filterColors }) => {
+const BayView: React.FC<BayViewProps> = ({ bayNumber, containers, rowsPerBay, tiersPerBay, highlightedContainerIds, selectedVessels, filterColors, flowFilter }) => {
   const containerMap = new Map<string, Container>();
   containers.forEach(c => containerMap.set(`${c.row}-${c.tier}`, c));
 
@@ -39,6 +40,7 @@ const BayView: React.FC<BayViewProps> = ({ bayNumber, containers, rowsPerBay, ti
                 isHighlighted={isHighlighted}
                 selectedVessels={selectedVessels}
                 filterColors={filterColors}
+                flowFilter={flowFilter}
               />
             );
           })
@@ -59,9 +61,10 @@ interface YardRowViewProps {
   highlightedContainerIds: Set<string>;
   selectedVessels: string[];
   filterColors: string[];
+  flowFilter: 'ALL' | 'EXPORT' | 'IMPORT' | 'EMPTY';
 }
 
-const YardRowView: React.FC<YardRowViewProps> = ({ label, containers, totalBays, rowsPerBay, tiersPerBay, highlightedContainerIds, selectedVessels, filterColors }) => {
+const YardRowView: React.FC<YardRowViewProps> = ({ label, containers, totalBays, rowsPerBay, tiersPerBay, highlightedContainerIds, selectedVessels, filterColors, flowFilter }) => {
   // Generate odd-numbered bays from 1 up to the max calculated from totalBays
   const bays = Array.from({ length: totalBays }, (_, i) => i * 2 + 1);
 
@@ -88,6 +91,7 @@ const YardRowView: React.FC<YardRowViewProps> = ({ label, containers, totalBays,
                   highlightedContainerIds={highlightedContainerIds}
                   selectedVessels={selectedVessels}
                   filterColors={filterColors}
+                  flowFilter={flowFilter}
                 />
              </React.Fragment>
           );

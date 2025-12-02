@@ -6,6 +6,7 @@ interface ContainerCellProps {
   isHighlighted?: boolean;
   selectedVessels: string[];
   filterColors: string[];
+  flowFilter: 'ALL' | 'EXPORT' | 'IMPORT' | 'EMPTY';
 }
 
 const ownerColors: { [key: string]: string } = {
@@ -35,7 +36,7 @@ const getColorForOwner = (owner: string): string => {
   return defaultOwnerColor;
 };
 
-const ContainerCell: React.FC<ContainerCellProps> = ({ container, isHighlighted, selectedVessels, filterColors }) => {
+const ContainerCell: React.FC<ContainerCellProps> = ({ container, isHighlighted, selectedVessels, filterColors, flowFilter }) => {
   // Empty slot
   if (!container) {
     return (
@@ -55,56 +56,105 @@ const ContainerCell: React.FC<ContainerCellProps> = ({ container, isHighlighted,
   if (container.vessel) {
     tooltipText += `\nVessel: ${container.vessel}`;
   }
+  if (container.flow) {
+      tooltipText += `\nFlow: ${container.flow}`;
+  }
+  if (container.status) {
+      tooltipText += `\nStatus: ${container.status}`;
+  }
   
   const baseClasses = "w-5 h-5 border-t border-l border-gray-900/20 flex-shrink-0 flex items-center justify-center cursor-pointer transition-transform duration-150 relative";
   const scaleClass = isHighlighted ? 'scale-150 z-20' : 'hover:scale-125 hover:z-10';
   const highlightClass = isHighlighted ? 'ring-4 ring-lime-400 ring-offset-2 ring-offset-white' : '';
 
-  let colorClass = '';
-  const activeFilters = selectedVessels.some(v => v !== '');
+  // --- Filtering Logic ---
+  
+  // Export: F/E + Export Flow (Show if flow is Export, regardless of status)
+  const isExport = container.flow === 'EXPORT';
+  
+  // Import: F/E + Import Flow (Show if flow is Import, regardless of status)
+  const isImport = container.flow === 'IMPORT';
+  
+  // Empty: Empty Status (Show if status is Empty, regardless of flow)
+  const isEmpty = container.status === 'EMPTY';
 
-  // Special handling for the 'end' part of a 40' container for consistent styling.
-  if (container.isMultiBay && container.partType === 'end') {
-      let isVisible = !activeFilters;
-      if (activeFilters) {
+  let matchesFlow = true;
+  if (flowFilter === 'EXPORT' && !isExport) matchesFlow = false;
+  if (flowFilter === 'IMPORT' && !isImport) matchesFlow = false;
+  if (flowFilter === 'EMPTY' && !isEmpty) matchesFlow = false;
+
+  let colorClass = '';
+
+  // If filtered out by Flow/Status, use muted color immediately (and potentially prevent vessel logic)
+  if (!matchesFlow) {
+      colorClass = mutedVesselColor;
+  } else {
+      // It matches the Flow filter (or Flow filter is ALL).
+      // Now decide the color based on Vessel Filter and Flow Color rules.
+      
+      const activeVesselFilters = selectedVessels.some(v => v !== '');
+
+      if (activeVesselFilters) {
+          // Priority 1: Vessel Filter is Active
           const vesselIndex = selectedVessels.indexOf(container.vessel || '');
           if (vesselIndex !== -1) {
-              isVisible = true; // It's visible if it matches a filter
+              // Matches specific vessel -> Use specific filter color
+              colorClass = filterColors[vesselIndex] || defaultOwnerColor;
+          } else {
+              // Vessel filter active, but this container doesn't match -> Mute
+              colorClass = mutedVesselColor;
+          }
+      } else {
+          // Priority 2: No Vessel Filter active -> Use Flow Colors or Default Owner Colors
+          if (flowFilter === 'EXPORT') {
+              colorClass = 'bg-green-500 text-white';
+          } else if (flowFilter === 'IMPORT') {
+              colorClass = 'bg-yellow-400 text-black';
+          } else if (flowFilter === 'EMPTY') {
+              colorClass = 'bg-sky-400 text-white';
+          } else {
+              // Flow filter is ALL. Fallback to normal view.
+              // Force Blue for Empty containers for visibility
+              if (container.status === 'EMPTY') {
+                  colorClass = 'bg-sky-400 text-white';
+              } else if (container.isMultiBay && container.partType === 'start') {
+                  colorClass = 'bg-blue-500';
+              } else {
+                  colorClass = getColorForOwner(container.owner);
+              }
           }
       }
-
-      if (isVisible) {
-          return (
-              <div
-                  className={`${baseClasses} bg-black text-white ${scaleClass} ${highlightClass}`}
-                  title={tooltipText}
-              >
-                  <svg className="absolute w-full h-full" stroke="white" strokeWidth="1.5">
-                      <line x1="10%" y1="10%" x2="90%" y2="90%" />
-                      <line x1="90%" y1="10%" x2="10%" y2="90%" />
-                  </svg>
-              </div>
-          );
-      } else {
-          // If filtered out, it becomes muted gray
-          colorClass = mutedVesselColor;
-      }
   }
-  // Logic for 20' containers and the 'start' part of 40' containers
-  else if (activeFilters) {
-    const vesselIndex = selectedVessels.indexOf(container.vessel || '');
-    if (vesselIndex !== -1) {
-        colorClass = filterColors[vesselIndex] || defaultOwnerColor;
-    } else {
-        colorClass = mutedVesselColor;
-    }
-  } 
-  else {
-      if (container.isMultiBay && container.partType === 'start') {
-          colorClass = 'bg-blue-500';
-      } else {
-          colorClass = getColorForOwner(container.owner);
-      }
+
+
+  // Special render for 'end' part of 40' container to just act as a placeholder visual
+  if (container.isMultiBay && container.partType === 'end') {
+     // If the 'start' part is visible (matches filters), this should probably be visible too with generic styling
+     // Re-evaluating visibility based on the computed colorClass above. 
+     // If colorClass is mutedVesselColor, it's hidden/muted.
+     
+     if (colorClass !== mutedVesselColor) {
+        return (
+            <div
+                className={`${baseClasses} bg-black text-white ${scaleClass} ${highlightClass}`}
+                title={tooltipText}
+            >
+                <svg className="absolute w-full h-full" stroke="white" strokeWidth="1.5">
+                    <line x1="10%" y1="10%" x2="90%" y2="90%" />
+                    <line x1="90%" y1="10%" x2="10%" y2="90%" />
+                </svg>
+            </div>
+        );
+     } else {
+         // If filtered out, it becomes muted gray
+         return (
+            <div
+              className={`${baseClasses} ${mutedVesselColor} ${scaleClass} ${highlightClass}`}
+              title={tooltipText}
+            >
+            </div>
+          );
+     }
   }
 
   return (
