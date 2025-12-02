@@ -1,16 +1,32 @@
+
+
 import { Container, ParseResult, ParseStats } from '../types';
 
 declare const XLSX: any;
 
-// Helper to find a value from a row object using a list of possible keys, case-insensitively.
+// Helper to find a value from a row object using a list of possible keys
 const findColumnValue = (row: any, possibleKeys: string[]): any => {
     const rowKeys = Object.keys(row);
+    
+    // Priority 1: Exact Match (Case-insensitive)
     for (const key of rowKeys) {
         const lowerKey = key.toLowerCase().trim();
         if (possibleKeys.includes(lowerKey)) {
             return row[key];
         }
     }
+
+    // Priority 2: Contains Match (The row header contains the keyword)
+    // We check this after exact matches to prefer precision.
+    // e.g., "Số ngày lưu bãi" will be found if possibleKeys has "lưu bãi"
+    for (const key of rowKeys) {
+        const lowerKey = key.toLowerCase().trim();
+        // Only match if the keyword is significant (length > 2) to avoid false positives like 'id' inside 'width'
+        if (possibleKeys.some(pk => pk.length > 1 && lowerKey.includes(pk))) {
+            return row[key];
+        }
+    }
+    
     return undefined;
 };
 
@@ -35,123 +51,245 @@ export const parseExcelFile = (file: File): Promise<ParseResult> => {
         
         const vesselSet = new Set<string>();
         const containers: Container[] = json.flatMap((row, index): Container[] => {
-          const locationRaw = findColumnValue(row, ['vị trí trên bãi', 'vị trí', 'location']);
+          // --- 1. ID Parsing ---
+          const idVal = findColumnValue(row, ['số cont', 'container', 'container number', 'cont', 'id', 'no', 'số']);
+          // Skip if no ID (User logic: "Skip rows without a valid ID")
+          if (!idVal) {
+             stats.skippedRows++;
+             return [];
+          }
+          const id = idVal.toString().trim();
+          // Filter out summary/total rows
+          if (id.toLowerCase().includes('total') || id.toLowerCase().includes('tổng')) {
+             return [];
+          }
+
+          // --- 2. Owner & Vessel ---
           const owner = findColumnValue(row, ['hãng khai thác', 'chủ hàng', 'owner', 'operator']) || 'Unknown';
-          const id = findColumnValue(row, ['số cont', 'container', 'container number']) || `unknown-${index}`;
           const vessel = findColumnValue(row, ['tên tàu', 'vessel']);
-          const iso = findColumnValue(row, ['loại iso', 'iso code', 'iso']);
-          
           if (vessel) {
             vesselSet.add(vessel.toString().trim());
           }
 
-          if (typeof locationRaw !== 'string' || locationRaw.trim() === '') {
-            stats.skippedRows++;
-            return []; // Skip if location is missing or not a string
-          }
-          const location = locationRaw.trim().replace(/\s/g, '');
-
-          let block: string | undefined;
-          let bayStr: string | undefined;
-          let rowStr: string | undefined;
-          let tierStr: string | undefined;
-
-          // Attempt to parse hyphenated format first (e.g., A2-22-05-1)
-          const parts = location.split('-');
-          if (parts.length === 4) {
-             [block, bayStr, rowStr, tierStr] = parts;
-          } else if (location.length >= 6) { // Fallback to non-hyphenated (e.g., A222051)
-            tierStr = location.slice(-1);
-            rowStr = location.slice(-3, -1); // Assumes 2-digit row like '05'
-            bayStr = location.slice(-5, -3); // Assumes 2-digit bay like '22'
-            block = location.slice(0, -5);
-          } else {
-            console.warn(`Skipping invalid location format (unrecognized): ${location}`);
-            stats.skippedRows++;
-            return [];
+          // --- 3. ISO & Size Parsing ---
+          const isoVal = findColumnValue(row, ['loại iso', 'iso code', 'iso', 'kích cỡ iso', 'type', 'mã']);
+          const iso = isoVal ? String(isoVal).trim().toUpperCase() : undefined;
+          
+          let size: 20 | 40 = 20; // Default
+          const sizeVal = findColumnValue(row, ['size', 'sz', 'length', 'kích', 'cỡ']);
+          
+          if (sizeVal) {
+             const num = parseInt(String(sizeVal).replace(/\D/g, ''));
+             if (num === 40 || num === 45) size = 40;
+             else if (num === 20 || num === 10) size = 20;
+          } else if (iso) {
+             // Infer size from ISO if size column missing
+             if (iso.startsWith('4') || iso.startsWith('L')) size = 40;
+             else if (iso.startsWith('1')) size = 10 as any; // Treat 10 as 20 for type safety or mapped logic
+             else size = 20;
           }
 
-          if (!block || !bayStr || !rowStr || !tierStr) {
-             console.warn(`Skipping invalid location format (parsing failed): ${location}`);
-             stats.skippedRows++;
-             return [];
-          }
-
-          // Standardize block name (uppercase)
-          block = block.toUpperCase();
-
-          const bay = parseInt(bayStr, 10);
-          const rowNum = parseInt(rowStr, 10);
-          const tier = parseInt(tierStr, 10);
-
-          if (isNaN(bay) || isNaN(rowNum) || isNaN(tier) || rowNum < 1 || tier < 1) {
-            console.warn(`Skipping invalid bay/row/tier in location: ${location}`);
-            stats.skippedRows++;
-            return [];
+          // --- 4. Status & Flow Parsing ---
+          // Priority 1: Check explicit F/E column (High confidence for Full/Empty)
+          let statusRaw = findColumnValue(row, ['f/e', 'fe', 'full/empty']);
+          
+          // Priority 2: Check generic Status column if F/E not found
+          // (Sometimes 'Status' contains 'Stacking' or 'Shifting' instead of Full/Empty, so we prefer F/E)
+          if (!statusRaw) {
+              statusRaw = findColumnValue(row, ['trạng thái', 'status', 'tình trạng', 'stat', 'trạng']);
           }
           
-          // Robustly parse status and flow
-          const statusValue = (findColumnValue(row, ['trạng thái', 'status', 'f/e']) || '').toString().trim().toUpperCase();
-          const flowValue = (findColumnValue(row, ['hướng', 'flow']) || '').toString().trim().toUpperCase();
-
-          let status: 'FULL' | 'EMPTY' | undefined;
-          let flow: 'IMPORT' | 'EXPORT' | undefined;
+          const statusVal = (statusRaw || '').toString().trim();
+          const flowVal = (findColumnValue(row, ['hướng', 'flow', 'category', 'cat', 'type', 'loại', 'im', 'ex']) || '').toString().trim();
           
-          // Determine flow first, as it can imply the status. Using .includes() for flexibility.
-          if (flowValue.includes('EXPORT') || flowValue.includes('XUẤT')) {
-              flow = 'EXPORT';
-          } else if (flowValue.includes('IMPORT') || flowValue.includes('NHẬP')) {
-              // This correctly catches "IMPORT", "IMPORT STORAGE", "NHẬP", "NHẬP LƯU KHO", etc.
-              flow = 'IMPORT';
-          }
+          const sLower = statusVal.toLowerCase();
+          const fLower = flowVal.toLowerCase();
 
-          // Now, determine status. An explicit 'EMPTY' status always wins.
-          if (statusValue.startsWith('E')) {
+          let status: 'FULL' | 'EMPTY' = 'FULL'; // Default
+          
+          // Strict Empty status detection
+          if (
+              sLower === 'e' || 
+              sLower === 'r' || 
+              sLower === 'mt' || 
+              sLower.includes('empty') || 
+              sLower.includes('rỗng') || 
+              sLower.includes('mt ') || 
+              sLower.includes(' mt')
+          ) {
               status = 'EMPTY';
-              flow = undefined; // Empty containers don't have a flow for our stats.
-          } else if (flow) {
-              // If we determined a flow (IMPORT/EXPORT), the container must be FULL.
-              // This handles cases where the F/E column might be blank for full containers.
-              status = 'FULL';
-          } else if (statusValue.startsWith('F')) {
-              // This is a fallback for containers explicitly marked as FULL but with an unknown flow.
-              status = 'FULL';
+          }
+          
+          // Double check: if status detected as FULL but flow says Empty/MT
+          if (status === 'FULL') {
+              if (fLower.includes('empty') || fLower.includes('rỗng') || fLower.includes('mt')) {
+                  status = 'EMPTY';
+              }
+          }
+
+          // Detect Flow (Normalized) & Detailed Flow
+          let flow: 'IMPORT' | 'EXPORT' | 'STORAGE' | undefined;
+          let detailedFlow: string = flowVal.toUpperCase(); // Preserve original or construct specific
+
+          // Determine Normalized Flow for Map
+          if (fLower.includes('ex') || fLower.includes('out') || fLower.includes('xuất')) {
+              flow = 'EXPORT';
+          } else if (fLower.includes('im') || fLower.includes('in') || fLower.includes('nhập')) {
+              flow = 'IMPORT';
+          } else if (fLower.includes('storage')) {
+              flow = 'STORAGE';
+          }
+          
+          // Fallback Normalized Flow
+          if (!flow) {
+             if (sLower.includes('export') || sLower.includes('xuất')) flow = 'EXPORT';
+             else if (sLower.includes('import') || sLower.includes('nhập')) flow = 'IMPORT';
+          }
+
+          // Determine Detailed Flow for Dwell Time Reports
+          // We want to distinguish "IMPORT STORAGE" and "STORAGE EMPTY"
+          if (fLower.includes('import') && fLower.includes('storage')) {
+              detailedFlow = 'IMPORT STORAGE';
+          } else if (fLower.includes('storage') && (fLower.includes('empty') || fLower.includes('mt') || status === 'EMPTY')) {
+              detailedFlow = 'STORAGE EMPTY';
+          } else if (fLower.includes('import') || sLower.includes('import') || fLower.includes('nhập')) {
+              detailedFlow = 'IMPORT';
+          } else if (fLower.includes('export') || sLower.includes('export') || fLower.includes('xuất')) {
+              detailedFlow = 'EXPORT';
+          }
+          
+          // --- 5. Dwell Time Parsing ---
+          // Updated to include 'số ngày lưu bãi' explicitly and support partial matching via findColumnValue
+          const dwellVal = findColumnValue(row, ['dwell', 'dwell time', 'days', 'số ngày', 'ngày lưu', 'lưu bãi', 'time in', 'tồn', 'số ngày lưu bãi']);
+          let dwellDays = 0;
+          if (dwellVal) {
+              // Try to parse number
+              const num = parseFloat(String(dwellVal).replace(/[^0-9.]/g, ''));
+              if (!isNaN(num)) {
+                  dwellDays = num;
+              }
           }
 
 
-          const type: 'GP' | 'REEFER' = iso?.toString().toUpperCase().includes('R') ? 'REEFER' : 'GP';
+          // --- 6. Location Parsing ---
+          const locationRaw = findColumnValue(row, ['vị trí trên bãi', 'vị trí', 'location']);
+          
+          let block = 'UNK';
+          let bay = 0;
+          let rowNum = 0;
+          let tier = 0;
+          let isUnmapped = true;
 
-          const commonData = { id, location, block, row: rowNum, tier, owner, vessel: vessel ? vessel.toString().trim() : undefined, status, flow, type, iso };
+          if (typeof locationRaw === 'string' && locationRaw.trim() !== '') {
+             const locationTrimmed = locationRaw.trim();
+             const location = locationTrimmed.replace(/\s/g, ''); // Normalized for Grid
+             
+             let bayStr, rowStr, tierStr;
+             
+             // Attempt grid parse
+             const parts = location.split('-');
+             if (parts.length === 4) {
+                 [block, bayStr, rowStr, tierStr] = parts;
+                 isUnmapped = false;
+             } else if (location.length >= 6) {
+                 tierStr = location.slice(-1);
+                 rowStr = location.slice(-3, -1);
+                 bayStr = location.slice(-5, -3);
+                 block = location.slice(0, -5);
+                 isUnmapped = false;
+             }
 
-          // Even bay number indicates a 40' container occupying two slots
-          if (bay % 2 === 0) {
-            stats.createdContainers += 1; // Count as one 40' container
-            const startContainer: Container = {
-              ...commonData,
-              bay: bay - 1,
-              size: 40,
-              isMultiBay: true,
-              partType: 'start',
-            };
-            const endContainer: Container = {
-              ...commonData,
-              bay: bay + 1,
-              size: 40,
-              isMultiBay: true,
-              partType: 'end',
-            };
-            return [startContainer, endContainer];
-          } 
-          // Odd bay number is a standard 20' container
-          else {
-            stats.createdContainers += 1;
-            const singleContainer: Container = {
-              ...commonData,
-              bay: bay,
-              size: 20,
-              isMultiBay: false,
-            };
-            return [singleContainer];
+             if (!isUnmapped && block && bayStr && rowStr && tierStr) {
+                block = block.toUpperCase();
+                bay = parseInt(bayStr, 10);
+                rowNum = parseInt(rowStr, 10);
+                tier = parseInt(tierStr, 10);
+
+                if (isNaN(bay) || isNaN(rowNum) || isNaN(tier) || rowNum < 1 || tier < 1) {
+                    isUnmapped = true; // Fallback to unmapped if numbers are bad
+                    block = 'UNK';
+                }
+             } else {
+                 isUnmapped = true;
+                 block = 'UNK';
+                 
+                 // Fallback for Heap/Zone Detection
+                 if (locationTrimmed.length >= 2 && locationTrimmed.length <= 10 && /^[a-zA-Z0-9\s]+$/.test(locationTrimmed)) {
+                     block = locationTrimmed.toUpperCase();
+                 }
+             }
+          }
+
+          const type: 'GP' | 'REEFER' = (iso && iso.includes('R')) ? 'REEFER' : 'GP';
+
+          // --- 7. Extra Metadata Parsing (Commodity, BL, Date, Hold) ---
+          const commodity = findColumnValue(row, ['hàng hóa', 'hàng hoá', 'tên hàng', 'commodity', 'cargo', 'goods'])?.toString().trim();
+          const billOfLading = findColumnValue(row, ['số vận đơn', 'số bl', 'bill of lading', 'b/l', 'bl'])?.toString().trim();
+          const inDate = findColumnValue(row, ['ngày nhập bãi', 'ngày nhập', 'ngày vào', 'time in', 'in date'])?.toString().trim();
+          const holdReason = findColumnValue(row, ['lý do giữ', 'lý do', 'hold reason', 'remark', 'ghi chú'])?.toString().trim();
+
+          const commonData = { 
+              id, 
+              location: isUnmapped ? (block !== 'UNK' ? locationRaw.toString().trim() : 'Unmapped') : locationRaw.toString().trim(), 
+              block, 
+              row: rowNum, 
+              tier, 
+              owner, 
+              vessel: vessel ? vessel.toString().trim() : undefined, 
+              status, 
+              flow, 
+              detailedFlow,
+              type, 
+              iso,
+              dwellDays,
+              commodity,
+              billOfLading,
+              inDate,
+              holdReason
+          };
+
+          // --- 8. Container Object Creation ---
+          // If valid map data exists, handle 20/40 logic for Map
+          if (!isUnmapped) {
+              // Even bay number indicates a 40' container occupying two slots
+              if (bay % 2 === 0) {
+                stats.createdContainers += 1; // Count as one 40' container
+                const startContainer: Container = {
+                  ...commonData,
+                  bay: bay - 1,
+                  size: 40,
+                  isMultiBay: true,
+                  partType: 'start',
+                };
+                const endContainer: Container = {
+                  ...commonData,
+                  bay: bay + 1,
+                  size: 40,
+                  isMultiBay: true,
+                  partType: 'end',
+                };
+                return [startContainer, endContainer];
+              } 
+              // Odd bay number is a standard 20' container
+              else {
+                stats.createdContainers += 1;
+                const singleContainer: Container = {
+                  ...commonData,
+                  bay: bay,
+                  size: 20,
+                  isMultiBay: false,
+                };
+                return [singleContainer];
+              }
+          } else {
+              // UNMAPPED CONTAINER (or Heap Container)
+              stats.createdContainers += 1;
+              return [{
+                  ...commonData,
+                  bay: 0,
+                  size: size, // Use parsed size
+                  isMultiBay: false 
+              }];
           }
         });
         
