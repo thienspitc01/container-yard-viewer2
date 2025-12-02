@@ -1,3 +1,5 @@
+
+
 export interface BlockConfig {
   name: string;
   totalBays: number;
@@ -6,6 +8,8 @@ export interface BlockConfig {
   capacity?: number; // Capacity in TEUs
   group?: string; // e.g., GP, REEFER, RỖNG
   isDefault?: boolean; // To prevent removal of initial blocks
+  machineType?: 'RTG' | 'RS'; // RTG or Reach Stacker (Xe nâng)
+  blockType?: 'GRID' | 'HEAP'; // GRID for standard Bay/Row/Tier, HEAP for unstructured zones
 }
 
 export interface Container {
@@ -21,9 +25,15 @@ export interface Container {
   partType?: 'start' | 'end'; // Which part of the 40' container this is
   vessel?: string; // e.g., 'ZHONG GU KUN MING'
   status?: 'FULL' | 'EMPTY';
-  flow?: 'IMPORT' | 'EXPORT';
+  flow?: 'IMPORT' | 'EXPORT' | 'STORAGE';
+  detailedFlow?: string; // More specific flow for reports (e.g., 'IMPORT STORAGE')
   type?: 'GP' | 'REEFER'; // GP: General Purpose, REEFER: Refrigerated
   iso?: string; // ISO Code
+  dwellDays?: number; // Days in yard
+  commodity?: string; // Hàng hoá
+  billOfLading?: string; // Số vận đơn
+  inDate?: string; // Ngày nhập bãi
+  holdReason?: string; // Lý do giữ
 }
 
 export interface ParseStats {
@@ -57,3 +67,16 @@ export interface BlockStats {
   importFullCount: number;
   emptyCount: number;
 }
+
+export interface ScheduleData {
+    vesselName: string;
+    voyage?: string;
+    discharge: number;
+    load: number;
+}
+
+export const RTG_BLOCK_NAMES = [
+    'A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1', 'I1',
+    'A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'H2', 'I2',
+    'A0', 'H0', 'I0'
+];

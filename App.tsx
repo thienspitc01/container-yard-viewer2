@@ -1,97 +1,122 @@
+
+
 import React, { useState, useMemo, useEffect } from 'react';
-import { Container, ParseStats, BlockConfig, VesselStatsData, BlockStats } from './types';
+import { Container, ParseStats, BlockConfig, BlockStats, RTG_BLOCK_NAMES } from './types';
 import { parseExcelFile } from './services/excelService';
 import FileUpload from './components/FileUpload';
 import YardRowView from './components/YardRowView';
+import HeapBlockView from './components/HeapBlockView';
 import BlockConfigurator from './components/BlockConfigurator';
 import VesselStatistics from './components/VesselStatistics';
 import YardStatistics from './components/YardStatistics';
+import DwellTimeStatistics from './components/DwellTimeStatistics';
 
 const STORAGE_KEYS = {
   CONTAINERS: 'yard_containers_v1',
   STATS: 'yard_stats_v1',
   VESSELS: 'yard_vessels_v1',
-  BLOCK_CONFIGS: 'yardBlockConfigs_v2'
+  BLOCK_CONFIGS: 'yardBlockConfigs_v4' // Incremented version to include new Heap defaults
+};
+
+const getMachineType = (name: string): 'RTG' | 'RS' => {
+    return RTG_BLOCK_NAMES.includes(name.toUpperCase()) ? 'RTG' : 'RS';
 };
 
 const DEFAULT_BLOCKS: BlockConfig[] = [
     // A1 - D1
-    { name: 'A1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'B1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'C1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'D1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
+    { name: 'A1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'B1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'C1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'D1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
     
     // A2 - D2
-    { name: 'A2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'B2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'C2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'D2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
+    { name: 'A2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'B2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'C2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'D2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
 
     // E1 - H1
-    { name: 'E1', capacity: 600, group: 'GP', isDefault: true, totalBays: 28, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'F1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'G1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'H1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
+    { name: 'E1', capacity: 600, group: 'GP', isDefault: true, totalBays: 28, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'F1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'G1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'H1', capacity: 676, group: 'GP', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
 
     // E2 - H2
-    { name: 'E2', capacity: 598, group: 'GP', isDefault: true, totalBays: 28, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'F2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'G2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'H2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5 },
+    { name: 'E2', capacity: 598, group: 'GP', isDefault: true, totalBays: 28, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'F2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'G2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'H2', capacity: 884, group: 'GP', isDefault: true, totalBays: 35, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
 
     // Empty Blocks (0 series Part 1)
-    { name: 'A0', capacity: 650, group: 'RỖNG', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'H0', capacity: 650, group: 'RỖNG', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'I0', capacity: 650, group: 'RỖNG', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
+    { name: 'A0', capacity: 650, group: 'RỖNG', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'H0', capacity: 650, group: 'RỖNG', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'I0', capacity: 650, group: 'RỖNG', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
 
     // N Series (Large)
-    { name: 'N1', capacity: 376, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4 },
-    { name: 'N2', capacity: 344, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4 },
-    { name: 'N3', capacity: 408, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4 },
-    { name: 'N4', capacity: 162, group: 'GP', isDefault: true, totalBays: 10, rowsPerBay: 5, tiersPerBay: 4 },
+    { name: 'N1', capacity: 376, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4, blockType: 'GRID' },
+    { name: 'N2', capacity: 344, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4, blockType: 'GRID' },
+    { name: 'N3', capacity: 408, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4, blockType: 'GRID' },
+    { name: 'N4', capacity: 162, group: 'GP', isDefault: true, totalBays: 10, rowsPerBay: 5, tiersPerBay: 4, blockType: 'GRID' },
 
     // Z & I Series
-    { name: 'Z2', capacity: 516, group: 'GP', isDefault: true, totalBays: 25, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'Z1', capacity: 126, group: 'GP', isDefault: true, totalBays: 10, rowsPerBay: 5, tiersPerBay: 3 },
-    { name: 'I1', capacity: 504, group: 'GP', isDefault: true, totalBays: 25, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'I2', capacity: 336, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4 },
+    { name: 'Z2', capacity: 516, group: 'GP', isDefault: true, totalBays: 25, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'Z1', capacity: 126, group: 'GP', isDefault: true, totalBays: 10, rowsPerBay: 5, tiersPerBay: 3, blockType: 'GRID' },
+    { name: 'I1', capacity: 504, group: 'GP', isDefault: true, totalBays: 25, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'I2', capacity: 336, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4, blockType: 'GRID' },
     
     // Second E2 entry handled as E2-B
-    { name: 'E2-B', capacity: 192, group: 'GP', isDefault: true, totalBays: 12, rowsPerBay: 5, tiersPerBay: 4 },
+    { name: 'E2-B', capacity: 192, group: 'GP', isDefault: true, totalBays: 12, rowsPerBay: 5, tiersPerBay: 4, blockType: 'GRID' },
 
     // Reefers
-    { name: 'R1', capacity: 650, group: 'REEFER', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'R3', capacity: 450, group: 'REEFER', isDefault: true, totalBays: 25, rowsPerBay: 6, tiersPerBay: 5 },
-    { name: 'R4', capacity: 259, group: 'REEFER', isDefault: true, totalBays: 15, rowsPerBay: 6, tiersPerBay: 4 },
-    { name: 'R2', capacity: 400, group: 'REEFER', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 5 },
+    { name: 'R1', capacity: 650, group: 'REEFER', isDefault: true, totalBays: 30, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'R3', capacity: 450, group: 'REEFER', isDefault: true, totalBays: 25, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
+    { name: 'R4', capacity: 259, group: 'REEFER', isDefault: true, totalBays: 15, rowsPerBay: 6, tiersPerBay: 4, blockType: 'GRID' },
+    { name: 'R2', capacity: 400, group: 'REEFER', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 5, blockType: 'GRID' },
 
     // Empty Blocks (0 series Part 2)
-    { name: 'B0', capacity: 1144, group: 'RỖNG', isDefault: true, totalBays: 40, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'C0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'D0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'E0', capacity: 840, group: 'RỖNG', isDefault: true, totalBays: 32, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'F0', capacity: 80, group: 'RỖNG', isDefault: true, totalBays: 8, rowsPerBay: 4, tiersPerBay: 3 },
-    { name: 'L0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'M0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6 },
+    { name: 'B0', capacity: 1144, group: 'RỖNG', isDefault: true, totalBays: 40, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'C0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'D0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'E0', capacity: 840, group: 'RỖNG', isDefault: true, totalBays: 32, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'F0', capacity: 80, group: 'RỖNG', isDefault: true, totalBays: 8, rowsPerBay: 4, tiersPerBay: 3, blockType: 'GRID' },
+    { name: 'L0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'M0', capacity: 940, group: 'RỖNG', isDefault: true, totalBays: 35, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
 
     // Large GP
-    { name: 'M1', capacity: 1128, group: 'GP', isDefault: true, totalBays: 40, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'L1', capacity: 1128, group: 'GP', isDefault: true, totalBays: 40, rowsPerBay: 7, tiersPerBay: 6 },
-    { name: 'K1', capacity: 378, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4 },
+    { name: 'M1', capacity: 1128, group: 'GP', isDefault: true, totalBays: 40, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'L1', capacity: 1128, group: 'GP', isDefault: true, totalBays: 40, rowsPerBay: 7, tiersPerBay: 6, blockType: 'GRID' },
+    { name: 'K1', capacity: 378, group: 'GP', isDefault: true, totalBays: 20, rowsPerBay: 6, tiersPerBay: 4, blockType: 'GRID' },
 
     // N Series (Small)
-    { name: 'N6', capacity: 160, group: 'GP', isDefault: true, totalBays: 10, rowsPerBay: 5, tiersPerBay: 4 },
-    { name: 'N7', capacity: 201, group: 'GP', isDefault: true, totalBays: 12, rowsPerBay: 5, tiersPerBay: 4 },
-    { name: 'N8', capacity: 25, group: 'GP', isDefault: true, totalBays: 5, rowsPerBay: 3, tiersPerBay: 3 },
-    { name: 'N9', capacity: 25, group: 'GP', isDefault: true, totalBays: 5, rowsPerBay: 3, tiersPerBay: 3 },
-    { name: 'N10', capacity: 10, group: 'GP', isDefault: true, totalBays: 4, rowsPerBay: 2, tiersPerBay: 2 },
-    { name: 'N11', capacity: 56, group: 'GP', isDefault: true, totalBays: 6, rowsPerBay: 4, tiersPerBay: 3 },
+    { name: 'N6', capacity: 160, group: 'GP', isDefault: true, totalBays: 10, rowsPerBay: 5, tiersPerBay: 4, blockType: 'GRID' },
+    { name: 'N7', capacity: 201, group: 'GP', isDefault: true, totalBays: 12, rowsPerBay: 5, tiersPerBay: 4, blockType: 'GRID' },
+    { name: 'N8', capacity: 25, group: 'GP', isDefault: true, totalBays: 5, rowsPerBay: 3, tiersPerBay: 3, blockType: 'GRID' },
+    { name: 'N9', capacity: 25, group: 'GP', isDefault: true, totalBays: 5, rowsPerBay: 3, tiersPerBay: 3, blockType: 'GRID' },
+    { name: 'N10', capacity: 10, group: 'GP', isDefault: true, totalBays: 4, rowsPerBay: 2, tiersPerBay: 2, blockType: 'GRID' },
+    { name: 'N11', capacity: 56, group: 'GP', isDefault: true, totalBays: 6, rowsPerBay: 4, tiersPerBay: 3, blockType: 'GRID' },
 
     // Misc
-    { name: 'T0', capacity: 80, group: 'RỖNG', isDefault: true, totalBays: 8, rowsPerBay: 4, tiersPerBay: 3 },
-    { name: 'T2', capacity: 30, group: 'GP', isDefault: true, totalBays: 5, rowsPerBay: 3, tiersPerBay: 3 },
-    { name: 'Z0', capacity: 72, group: 'RỖNG', isDefault: true, totalBays: 8, rowsPerBay: 4, tiersPerBay: 3 },
-];
+    { name: 'T0', capacity: 80, group: 'RỖNG', isDefault: true, totalBays: 8, rowsPerBay: 4, tiersPerBay: 3, blockType: 'GRID' },
+    { name: 'T2', capacity: 30, group: 'GP', isDefault: true, totalBays: 5, rowsPerBay: 3, tiersPerBay: 3, blockType: 'GRID' },
+    { name: 'Z0', capacity: 72, group: 'RỖNG', isDefault: true, totalBays: 8, rowsPerBay: 4, tiersPerBay: 3, blockType: 'GRID' },
+
+    // --- NEW HEAP AREAS ---
+    { name: 'APR01', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'APR02', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'APRON', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'MNR',   capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'MNR1',  capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'CFS 1', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'CFS 2', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'CFS 3', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'CFS 4', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'CFS 5', capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+    { name: 'WAS',   capacity: 500, group: 'OTHER', isDefault: true, totalBays: 0, rowsPerBay: 0, tiersPerBay: 0, blockType: 'HEAP', machineType: 'RS' },
+
+].map((b: any): BlockConfig => {
+    if (b.blockType === 'HEAP') return b as BlockConfig;
+    return { ...b, machineType: getMachineType(b.name), blockType: 'GRID' } as BlockConfig; // Ensure GRID default and machine types
+});
 
 // A fixed, distinct color palette for the three vessel filters
 const FILTER_COLORS = [
@@ -100,6 +125,23 @@ const FILTER_COLORS = [
   'bg-amber-500',
 ];
 
+// Helper to calculate TEU based on ISO code or Size
+export const calculateTEU = (container: Container): number => {
+    if (container.iso && container.iso.length > 0) {
+      const code = container.iso.trim().toUpperCase();
+      const prefix = code.charAt(0);
+      
+      // ISO Codes starting with 1 or 2 (10ft, 20ft) -> 1 TEU
+      if (prefix === '1' || prefix === '2') return 1;
+      
+      // ISO Codes starting with 4 or L (40ft, 45ft) -> 2 TEU
+      if (prefix === '4' || prefix === 'L') return 2;
+    }
+  
+    // Fallback to size if ISO code is missing or unrecognized
+    if (container.size >= 40) return 2;
+    return 1;
+};
 
 const App: React.FC = () => {
   // Load containers from localStorage if available
@@ -128,8 +170,11 @@ const App: React.FC = () => {
   });
 
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [view, setView] = useState<'map' | 'stats'>('map');
+  const [view, setView] = useState<'map' | 'stats' | 'vessel_stats' | 'dwell_stats'>('map');
   const [isoTypeFilter, setIsoTypeFilter] = useState<'ALL' | 'DRY' | 'REEFER'>('ALL');
+  
+  // New State for Flow Filter
+  const [flowFilter, setFlowFilter] = useState<'ALL' | 'EXPORT' | 'IMPORT' | 'EMPTY'>('ALL');
 
   // Load vessels from localStorage
   const [vessels, setVessels] = useState<string[]>(() => {
@@ -173,8 +218,15 @@ const App: React.FC = () => {
     setBlockConfigs(prev => [...prev, { ...newBlock, isDefault: false }]);
   };
 
+  const handleUpdateBlock = (updatedBlock: BlockConfig) => {
+    setBlockConfigs(prev => prev.map(b => 
+      b.name === updatedBlock.name ? updatedBlock : b
+    ));
+  };
+
   const handleRemoveBlock = (blockName: string) => {
-    setBlockConfigs(prev => prev.filter(b => b.name !== blockName));
+    // Case-insensitive comparison for robust removal
+    setBlockConfigs(prev => prev.filter(b => b.name.toUpperCase() !== blockName.toUpperCase()));
   };
 
   const handleClearData = () => {
@@ -234,6 +286,9 @@ const App: React.FC = () => {
   
   const containersByBlock = useMemo(() => {
     return containers.reduce((acc, container) => {
+        // block lookup needs to handle "CFS 1" vs "CFS1" etc.
+        // The container.block property comes from excelService.
+        // It matches blockConfig.name if parsed correctly.
         let blockName = container.block;
         if (!acc[blockName]) {
             acc[blockName] = [];
@@ -259,29 +314,6 @@ const App: React.FC = () => {
     return new Set(matchingContainers.map(c => c.id));
   }, [searchTerm, containers]);
 
-  const vesselStatsData = useMemo(() => {
-    const stats: VesselStatsData = {};
-    for (const block of blockConfigs) {
-      stats[block.name] = {};
-    }
-
-    for (const container of containers) {
-      if (container.vessel) {
-        if (container.isMultiBay && container.partType === 'end') {
-          continue;
-        }
-        if (!stats[container.block]) {
-          stats[container.block] = {};
-        }
-        if (!stats[container.block][container.vessel]) {
-          stats[container.block][container.vessel] = 0;
-        }
-        stats[container.block][container.vessel]++;
-      }
-    }
-    return stats;
-  }, [containers, blockConfigs]);
-
   const filteredContainers = useMemo(() => {
     if (isoTypeFilter === 'ALL') {
       return containers;
@@ -291,6 +323,14 @@ const App: React.FC = () => {
 
     return containers.filter(c => {
       const iso = c.iso?.trim().toUpperCase();
+      
+      // Special Handling: Empty containers often have missing ISO codes in reports.
+      // If status is EMPTY and ISO is missing, we default to treating it as Dry/GP for filtering purposes.
+      if (c.status === 'EMPTY' && (!iso || iso.length < 3)) {
+          if (isoTypeFilter === 'REEFER') return false;
+          return true; // Include in Dry or All
+      }
+
       if (!iso || iso.length < 3) {
         return false;
       }
@@ -313,193 +353,298 @@ const App: React.FC = () => {
     return blockConfigs.map(block => {
       const blockContainers = uniqueContainers.filter(c => c.block === block.name);
       
-      const getTeus = (c: Container) => c.size === 40 ? 2 : 1;
+      // Calculate containers for each category based on Revised Priority:
       
-      const exportFullContainers = blockContainers.filter(c => c.status === 'FULL' && c.flow === 'EXPORT');
-      const importFullContainers = blockContainers.filter(c => c.status === 'FULL' && c.flow === 'IMPORT');
-      const emptyContainers = blockContainers.filter(c => c.status === 'EMPTY');
+      // 1. Outbound (Green): Flow === EXPORT (Status can be Full or Empty)
+      const exportContainers = blockContainers.filter(c => c.flow === 'EXPORT');
+
+      // 2. Empty Stock (Blue): Status === EMPTY && Flow !== EXPORT
+      const emptyStockContainers = blockContainers.filter(c => c.status === 'EMPTY' && c.flow !== 'EXPORT');
+
+      // 3. Inbound (Yellow): Status === FULL && Flow !== EXPORT
+      const inboundContainers = blockContainers.filter(c => c.status === 'FULL' && c.flow !== 'EXPORT');
       
-      const exportFullTeus = exportFullContainers.reduce((sum, c) => sum + getTeus(c), 0);
-      const importFullTeus = importFullContainers.reduce((sum, c) => sum + getTeus(c), 0);
-      const emptyTeus = emptyContainers.reduce((sum, c) => sum + getTeus(c), 0);
+      const exportTeus = exportContainers.reduce((sum, c) => sum + calculateTEU(c), 0);
+      const inboundTeus = inboundContainers.reduce((sum, c) => sum + calculateTEU(c), 0);
+      const emptyStockTeus = emptyStockContainers.reduce((sum, c) => sum + calculateTEU(c), 0);
       
       return {
         name: block.name,
-        group: block.group === 'RỖNG' ? 'GP' : (block.group || 'N/A'),
+        group: block.group || 'N/A', 
         capacity: block.capacity || 0,
-        exportFullTeus,
-        importFullTeus,
-        emptyTeus,
-        exportFullCount: exportFullContainers.length,
-        importFullCount: importFullContainers.length,
-        emptyCount: emptyContainers.length,
+        // Mapping internal names to new semantic roles:
+        exportFullTeus: exportTeus,      // "Outbound"
+        importFullTeus: inboundTeus,     // "Inbound"
+        emptyTeus: emptyStockTeus,       // "Empty Stock"
+        exportFullCount: exportContainers.length,
+        importFullCount: inboundContainers.length,
+        emptyCount: emptyStockContainers.length
       };
     });
   }, [filteredContainers, blockConfigs]);
 
-
   return (
-    <div className="min-h-screen text-slate-800 p-4 sm:p-6 lg:p-8">
-      <div className="max-w-full mx-auto">
-        <header className="text-center mb-8">
-          <h1 className="text-4xl font-extrabold text-slate-900 tracking-tight">Container Yard Viewer</h1>
-          <p className="mt-2 text-lg text-slate-600">Upload an Excel file to visualize container positions in the yard.</p>
-        </header>
+    <div className="min-h-screen p-4 pb-20">
+      {/* Header and Navigation */}
+      <div className="mb-6 flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm sticky top-0 z-50">
+         <h1 className="text-2xl font-bold text-slate-800">Container Yard Viewer</h1>
+         
+         <div className="flex space-x-2 mt-4 md:mt-0 overflow-x-auto pb-1">
+            <button 
+              onClick={() => setView('map')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${view === 'map' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+            >
+              Yard Map
+            </button>
+            <button 
+              onClick={() => setView('stats')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${view === 'stats' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+            >
+              Yard Statistics
+            </button>
+            <button 
+              onClick={() => setView('vessel_stats')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${view === 'vessel_stats' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+            >
+              Vessel Statistics
+            </button>
+            <button 
+              onClick={() => setView('dwell_stats')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${view === 'dwell_stats' ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+            >
+              Dwell Time
+            </button>
+         </div>
+      </div>
 
-        <main>
-          <BlockConfigurator 
-            blocks={blockConfigs}
-            onAddBlock={handleAddBlock}
-            onRemoveBlock={handleRemoveBlock}
-          />
+      <div className="space-y-6">
+        {/* Error Message */}
+        {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+            <div className="flex">
+                <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                </div>
+                <div className="ml-3">
+                <p className="text-sm text-red-700">{error}</p>
+                </div>
+            </div>
+            </div>
+        )}
 
-          <div className="flex justify-center mb-6 mt-6 space-x-2 p-1 bg-slate-200 rounded-lg">
-              <button
-                  onClick={() => setView('map')}
-                  className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors duration-200 ${
-                      view === 'map' ? 'bg-white text-blue-600 shadow' : 'bg-transparent text-slate-600 hover:bg-slate-300'
-                  }`}
-              >
-                  Yard Map View
-              </button>
-              <button
-                  onClick={() => setView('stats')}
-                  disabled={containers.length === 0}
-                  className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors duration-200 ${
-                      view === 'stats' ? 'bg-white text-blue-600 shadow' : 'bg-transparent text-slate-600 hover:bg-slate-300'
-                  } disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
-              >
-                  Yard Statistics
-              </button>
-          </div>
-        
-          {view === 'map' && (
-            <div className="bg-white p-6 rounded-xl shadow-lg mb-8">
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-center">
-                  <div className="lg:col-span-1 flex flex-col gap-3">
+        {/* --- MAP VIEW --- */}
+        {view === 'map' && (
+           <>
+             {/* File Upload */}
+             <div className="bg-white p-6 rounded-xl shadow-lg">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="flex-1 w-full">
                     <FileUpload onFileUpload={handleFileUpload} isLoading={isLoading} />
-                    {containers.length > 0 && (
-                        <button
-                            onClick={handleClearData}
-                            className="text-xs font-medium text-red-500 hover:text-red-700 hover:underline transition-colors text-center"
-                        >
-                            Clear Saved Data
-                        </button>
-                    )}
                   </div>
-                  <div className="relative lg:col-span-1">
-                    <label htmlFor="search-location" className="sr-only">Highlight Location or Container ID</label>
-                    <input
-                      id="search-location"
-                      type="text"
-                      placeholder="Highlight by Location or ID"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full p-3 pl-10 border-2 border-slate-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition"
-                    />
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-5 w-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                      </svg>
+                   {stats && (
+                      <div className="flex flex-col md:items-end text-sm text-slate-600">
+                        <span className="font-semibold text-slate-800">File Parsed Successfully</span>
+                        <span>Total Rows: {stats.totalRows.toLocaleString()}</span>
+                        <span>Containers Created: {stats.createdContainers.toLocaleString()}</span>
+                        {stats.skippedRows > 0 && <span className="text-amber-600">Skipped/Invalid: {stats.skippedRows.toLocaleString()}</span>}
+                      </div>
+                   )}
+                   {containers.length > 0 && (
+                      <button onClick={handleClearData} className="text-red-500 hover:text-red-700 font-medium text-sm">
+                          Clear Data
+                      </button>
+                   )}
+                </div>
+             </div>
+
+             {containers.length > 0 && (
+                <>
+                  {/* Filters Bar */}
+                  <div className="bg-white p-4 rounded-xl shadow-lg space-y-4">
+                    <div className="flex flex-col md:flex-row gap-4">
+                        {/* Search */}
+                        <div className="flex-1">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Search Container / Location</label>
+                            <div className="relative">
+                                <input
+                                type="text"
+                                placeholder="Enter container number or location (e.g. A2-22-05-1)"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                                {searchTerm && (
+                                    <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600">
+                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        
+                        {/* Flow Filter */}
+                        <div className="w-full md:w-48">
+                           <label className="block text-sm font-medium text-slate-700 mb-1">Flow Filter</label>
+                           <select 
+                             value={flowFilter} 
+                             onChange={(e) => setFlowFilter(e.target.value as any)}
+                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                           >
+                             <option value="ALL">All Flows</option>
+                             <option value="EXPORT">Export (Green)</option>
+                             <option value="IMPORT">Import (Yellow)</option>
+                             <option value="EMPTY">Empty (Blue)</option>
+                           </select>
+                        </div>
+
+                         {/* ISO Filter */}
+                        <div className="w-full md:w-48">
+                           <label className="block text-sm font-medium text-slate-700 mb-1">ISO Type</label>
+                           <select 
+                             value={isoTypeFilter} 
+                             onChange={(e) => setIsoTypeFilter(e.target.value as any)}
+                             className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                           >
+                             <option value="ALL">All Types</option>
+                             <option value="DRY">Dry (GP)</option>
+                             <option value="REEFER">Reefer (R)</option>
+                           </select>
+                        </div>
+                    </div>
+
+                    {/* Vessel Filters */}
+                    <div>
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Vessel Highlight Filters</label>
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {selectedVessels.map((selected, index) => (
+                                <div key={index} className="flex items-center space-x-2">
+                                    <div className={`w-4 h-4 rounded-full flex-shrink-0 ${FILTER_COLORS[index]}`}></div>
+                                    <select
+                                        value={selected}
+                                        onChange={(e) => handleVesselChange(index, e.target.value)}
+                                        className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                                    >
+                                        <option value="">Select Vessel...</option>
+                                        {vessels.map(v => (
+                                            <option key={v} value={v}>{v}</option>
+                                        ))}
+                                    </select>
+                                    {selected && (
+                                        <button onClick={() => handleVesselChange(index, '')} className="text-slate-400 hover:text-red-500">
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                         </div>
                     </div>
                   </div>
-                  
-                  {/* Vessel Filters */}
-                  {vessels.length > 0 && FILTER_COLORS.map((color, index) => (
-                      <div key={index} className="relative lg:col-span-1">
-                        <label htmlFor={`vessel-filter-${index}`} className="sr-only">{`Filter by Vessel ${index + 1}`}</label>
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className={`h-3 w-3 rounded-full ${color} border border-slate-400/50`}></span>
-                        </div>
-                         <select
-                           id={`vessel-filter-${index}`}
-                           value={selectedVessels[index]}
-                           onChange={(e) => handleVesselChange(index, e.target.value)}
-                           className="w-full p-3 pl-8 border-2 border-slate-200 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition appearance-none"
-                         >
-                           <option value="">{`Filter ${index + 1}`}</option>
-                           {vessels.map(vessel => (
-                             <option key={vessel} value={vessel}>{vessel}</option>
-                           ))}
-                         </select>
-                      </div>
-                  ))}
-              </div>
-              {error && <p className="text-center text-red-500 mt-4 font-semibold">{error}</p>}
-              {stats && !error && (
-                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md text-sm text-green-800">
-                    <p className="font-semibold">Data Loaded</p>
-                    <ul className="list-disc list-inside ml-2">
-                        <li>Total Rows in File: {stats.totalRows}</li>
-                        <li>Containers Mapped: {stats.createdContainers}</li>
-                        <li>Rows Skipped (invalid format): {stats.skippedRows}</li>
-                    </ul>
-                </div>
-              )}
-            </div>
-          )}
 
-          {view === 'map' ? (
-            <div className="space-y-6">
-              {blockConfigs.map(config => (
-                <YardRowView 
-                  key={config.name}
-                  label={config.name}
-                  containers={containersByBlock[config.name] || []}
-                  totalBays={config.totalBays}
-                  rowsPerBay={config.rowsPerBay}
-                  tiersPerBay={config.tiersPerBay}
-                  highlightedContainerIds={highlightedContainerIds}
-                  selectedVessels={selectedVessels}
-                  filterColors={FILTER_COLORS}
-                />
-              ))}
-            </div>
-           ) : (
-            <YardStatistics 
-              data={processedStats} 
-              isoTypeFilter={isoTypeFilter} 
-              onFilterChange={setIsoTypeFilter}
-            />
-           )}
+                  <BlockConfigurator 
+                      blocks={blockConfigs} 
+                      onAddBlock={handleAddBlock} 
+                      onRemoveBlock={handleRemoveBlock} 
+                      onUpdateBlock={handleUpdateBlock}
+                  />
 
-          {containers.length > 0 && view === 'map' && (
-            <div className="mt-8">
-              <VesselStatistics
-                statsData={vesselStatsData}
-                vessels={vessels}
-                blocks={blockConfigs}
-              />
-            </div>
-          )}
-
-          {containers.length === 0 && !isLoading && (
-            <div className="mt-12 text-center">
-              <div className="bg-white p-10 rounded-xl shadow-lg inline-block">
-                <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V7a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <h3 className="mt-2 text-lg font-medium text-slate-900">Yard is empty</h3>
-                <p className="mt-1 text-sm text-slate-500">Upload a file to see container data.</p>
-                 <div className="mt-4 text-left text-xs text-slate-400 bg-slate-50 p-3 rounded-md">
-                    <p className="font-semibold">Expected Excel Columns:</p>
-                    <ul className="list-disc list-inside">
-                        <li><b>Location:</b> <span className="font-mono">Vị trí trên bãi</span>, <span className="font-mono">Vị trí</span>, or <span className="font-mono">Location</span></li>
-                        <li><b>Status:</b> <span className="font-mono">Trạng thái</span> (e.g., 'F' for Full, 'E' for Empty)</li>
-                        <li><b>Flow:</b> <span className="font-mono">Hướng</span> (e.g., 'IM' for Import, 'EX' for Export)</li>
-                        <li><b>ISO Code:</b> <span className="font-mono">Loại ISO</span> (e.g., '22G1', '45R1')</li>
-                        <li><b>Owner:</b> <span className="font-mono">Hãng khai thác</span> or <span className="font-mono">Owner</span></li>
-                        <li><b>Container No:</b> <span className="font-mono">Số cont</span> or <span className="font-mono">Container</span></li>
-                        <li><b>Vessel:</b> <span className="font-mono">Tên tàu</span> or <span className="font-mono">Vessel</span></li>
-                    </ul>
-                    <p className="mt-2 text-slate-500">
-                      <b>Location Format:</b> <span className="font-mono">BLOCK-BAY-ROW-TIER</span> (e.g., <span className="font-mono">A2-21-05-1</span> or <span className="font-mono">A221051</span>).
-                    </p>
+                  <div className="space-y-8">
+                     {blockConfigs.map(block => {
+                        // For Heap blocks, containers are assigned by 'block' property name.
+                        // For Grid blocks, it's the same.
+                        const blockContainers = containersByBlock[block.name] || [];
+                        
+                        if (block.blockType === 'HEAP') {
+                             return (
+                                <HeapBlockView 
+                                    key={block.name}
+                                    label={block.name}
+                                    containers={blockContainers}
+                                    capacity={block.capacity || 100}
+                                    highlightedContainerIds={highlightedContainerIds}
+                                    selectedVessels={selectedVessels}
+                                    filterColors={FILTER_COLORS}
+                                    flowFilter={flowFilter}
+                                />
+                             );
+                        }
+                        
+                        return (
+                           <YardRowView 
+                               key={block.name}
+                               label={block.name} 
+                               containers={blockContainers} 
+                               totalBays={block.totalBays}
+                               rowsPerBay={block.rowsPerBay}
+                               tiersPerBay={block.tiersPerBay}
+                               highlightedContainerIds={highlightedContainerIds}
+                               selectedVessels={selectedVessels}
+                               filterColors={FILTER_COLORS}
+                               flowFilter={flowFilter}
+                           />
+                        );
+                     })}
+                  </div>
+                </>
+             )}
+           </>
+        )}
+        
+        {/* --- YARD STATISTICS VIEW --- */}
+        {view === 'stats' && (
+           <>
+              {containers.length > 0 ? (
+                 <YardStatistics 
+                   data={processedStats} 
+                   isoTypeFilter={isoTypeFilter} 
+                   onFilterChange={setIsoTypeFilter}
+                   containers={filteredContainers}
+                   blocks={blockConfigs}
+                 />
+              ) : (
+                 <div className="text-center py-10 text-slate-500 bg-white rounded-lg shadow">
+                    Please upload a file to view statistics.
                  </div>
-              </div>
-            </div>
-          )}
-        </main>
+              )}
+           </>
+        )}
+
+        {/* --- VESSEL STATISTICS VIEW --- */}
+        {view === 'vessel_stats' && (
+            <>
+               {containers.length > 0 ? (
+                  <VesselStatistics 
+                      containers={containers}
+                      vessels={vessels}
+                      blocks={blockConfigs}
+                      onSelectVessels={setSelectedVessels}
+                  />
+               ) : (
+                  <div className="text-center py-10 text-slate-500 bg-white rounded-lg shadow">
+                     Please upload a file to view vessel statistics.
+                  </div>
+               )}
+            </>
+        )}
+
+        {/* --- DWELL TIME STATISTICS VIEW --- */}
+        {view === 'dwell_stats' && (
+            <>
+               {containers.length > 0 ? (
+                  <DwellTimeStatistics 
+                      containers={containers}
+                  />
+               ) : (
+                  <div className="text-center py-10 text-slate-500 bg-white rounded-lg shadow">
+                     Please upload a file to view Dwell Time statistics.
+                  </div>
+               )}
+            </>
+        )}
       </div>
     </div>
   );
